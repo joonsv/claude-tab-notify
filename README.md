@@ -7,10 +7,21 @@ Claude Code plugin for **Windows**: a soft chime when Claude finishes, and your 
 | When Claude finishes and… | What happens |
 |---|---|
 | You're in that session's tab and were active in the last 60 s | Nothing — you've seen it |
-| You're in that tab but idle (AFK) | Chime after 3 min, unless you do something first |
-| You're in **another tab** of Windows Terminal | Chime + the tab gets a 🔔 in its title and a blinking ring. It switches to that tab on your next **Enter** in the terminal — or right away if the tab you are on is a Claude session that is still working: after 10 s without input if you are just waiting on it, or after 30 s without typing if you had started typing there (time to think). If you click over yourself, the mark disappears |
-| You're in another app | Chime + the terminal comes to the front on the right tab |
-| Something is running fullscreen (game, video, F11) | Chime + tab mark, your focus is never stolen |
+| You're in that tab but idle (AFK) | Waits up to 3 min: any input in that tab (or a new prompt) cancels it, otherwise a chime |
+| You're in **another tab** of Windows Terminal | Chime + the finished tab gets a 🔔 in its title and a blinking ring (see below for when it switches) |
+| You're in another app | Chime + the terminal comes to the front on the finished tab (after a short pause in your typing, so no keystrokes land in the wrong place) |
+| Something is running fullscreen (game, video, F11) | Chime + tab mark only — your focus is never stolen |
+
+### When a marked tab switches
+
+While a tab is marked, it switches to it when:
+
+- **you press Enter** anywhere in the terminal (e.g. sending a prompt in the tab you're on) — Shift/Ctrl/Alt+Enter don't count;
+- **the tab you're on is a Claude session that is still working** (spinner in its title) and:
+  - you haven't touched anything for **10 s** — you're just waiting on it, or
+  - you typed there without pressing Enter and then stopped for **30 s** — time to think before it moves you.
+
+If you click over to the marked tab yourself, the mark simply disappears. With several finished tabs waiting, each Enter / trigger switches to only one of them.
 
 Tab detection and marking work in **Windows Terminal**. In other terminals (conhost, VS Code) you get the chime and the window brought to the front.
 
