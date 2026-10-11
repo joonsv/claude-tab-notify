@@ -96,7 +96,7 @@ if ($Mode -eq 'stop') {
 
 # ---------------------------------------------------------------- watch mode
 $PID | Set-Content $watcherFile
-$dll = Join-Path $stateDir 'claude-win-v5.dll'
+$dll = Join-Path $stateDir 'claude-win-v6.dll'
 if (-not (Test-Path $dll)) {
     $src = @'
 using System;
@@ -143,6 +143,8 @@ public static class ClaudeWin {
     public static uint WindowPid(IntPtr h) { uint p; GetWindowThreadProcessId(h, out p); return p; }
     public static string WindowTitle(IntPtr h) { var sb = new StringBuilder(1024); GetWindowText(h, sb, 1024); return sb.ToString(); }
     public static bool KeyDown(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
+    // Pressed and released since the previous call: catches taps shorter than our polling interval.
+    public static bool KeyTapped(int vk) { return (GetAsyncKeyState(vk) & 0x0001) != 0; }
     // A key that edits text (letters, digits, punctuation, space, backspace, delete) is held down.
     // Ctrl/Alt combos are shortcuts, not typing.
     public static bool TypingKeyDown() {
@@ -359,6 +361,7 @@ function MarkAndWait {
     Log ("  marked tab; front=[{0}] busy={1} last input {2:N1}s ago" -f (Norm $fgT), (FrontTabBusy), ([ClaudeWin]::IdleMs() / 1000))
     $ring = $false; $lastBlink = -10000; $lastCheck = -10000; $enterDown = $false; $modsUsed = $false
     $lastType = -1000000   # last text keystroke in the tab in front
+    [void][ClaudeWin]::KeyTapped(0x0D)   # drop a stale 'pressed since last call' from before we started
     $typedHere = $false   # a real keystroke seen in the tab in front since its last Enter
     $lastFront = Norm ([ClaudeWin]::WindowTitle([ClaudeWin]::Foreground()))
     $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -371,6 +374,12 @@ function MarkAndWait {
         # Enter released while a terminal window of ours is in front (Shift/Ctrl/Alt+Enter don't count)
         if ((TerminalInFront) -and [ClaudeWin]::TypingKeyDown()) { $lastType = $now; $typedHere = $true }
         $down = [ClaudeWin]::KeyDown(0x0D)
+        $tapped = [ClaudeWin]::KeyTapped(0x0D)
+        if (-not $down -and -not $enterDown -and $tapped) {
+            # a whole press happened between two polls: treat it as down + released now
+            if ([ClaudeWin]::KeyDown(0x10) -or [ClaudeWin]::KeyDown(0x11) -or [ClaudeWin]::KeyDown(0x12)) { $modsUsed = $true }
+            $enterDown = $true
+        }
         if ($down) {
             if ([ClaudeWin]::KeyDown(0x10) -or [ClaudeWin]::KeyDown(0x11) -or [ClaudeWin]::KeyDown(0x12)) { $modsUsed = $true }
             $enterDown = $true

@@ -2,6 +2,10 @@
 
 Claude Code plugin for **Windows**: a soft chime when Claude finishes **or needs your input** (permission prompt, question), and your terminal (tab) comes to you — but only if you haven't already seen it.
 
+![tab-notify demo: you're typing in a busy Claude tab, the finished tab gets a bell and a blinking ring, and on Enter it switches over](docs/demo.gif)
+
+*You're typing in a tab where Claude is still working. Another session finishes: its tab gets a 🔔 and a blinking ring. You press Enter, and it switches you over.*
+
 ## What it does
 
 Finishing a turn and needing your input (a permission prompt, a question, an MCP input dialog) are handled exactly the same way:
