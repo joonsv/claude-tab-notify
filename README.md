@@ -19,7 +19,7 @@ Tab-detectie/markering werkt in **Windows Terminal**. In andere terminals (conho
 Typ in Claude Code (terminal):
 
 ```
-/plugin install tab-notify --marketplace <owner>/<repo>
+/plugin install tab-notify --marketplace joonsv/claude-tab-notify
 ```
 
 Kies `y` om de marketplace toe te voegen en daarna een scope (user = voor al je projecten). Herstart daarna je Claude-sessies.
