@@ -7,8 +7,10 @@
 #                                                               new prompt; otherwise chime
 #       * user in ANOTHER tab of the terminal                -> chime + mark this tab (bell in the title +
 #                                                               blinking progress ring). Switch to it after
-#                                                               the user's next Enter in the terminal; clear
-#                                                               the mark if they switch to it themselves
+#                                                               the user's next Enter in the terminal, or right
+#                                                               away if the tab in front is a busy Claude
+#                                                               session they're waiting on; clear the mark if
+#                                                               they switch to it themselves
 #       * user in another app                                -> chime + bring terminal to front on this tab
 #       * fullscreen app in front                            -> chime + mark the tab, never steal focus
 param(
@@ -258,6 +260,25 @@ function OurTabActive {
 }
 function TerminalInFront { return $OwnerPid -and ([ClaudeWin]::WindowPid([ClaudeWin]::Foreground()) -eq $OwnerPid) }
 
+# Claude puts a spinning half-circle in its tab title while it works (an asterisk when idle).
+# If the tab in front is a busy Claude session, the user is just waiting on it: switching is fine.
+$SPIN = @(0x25D0, 0x25D1, 0x25D2, 0x25D3) | ForEach-Object { [char]$_ }
+function FrontTabBusy {
+    $fg = [ClaudeWin]::Foreground()
+    if ([ClaudeWin]::WindowPid($fg) -ne $OwnerPid) { return $false }
+    $t = [ClaudeWin]::WindowTitle($fg)
+    return $t.Length -gt 0 -and ($SPIN -contains $t[0])
+}
+
+# Only one waiting session may switch per trigger (Enter press / busy-tab check).
+function ClaimSwitch {
+    $claimFile = Join-Path $stateDir 'switch.claim'
+    $claim = 0; try { $claim = [long]((Get-Content $claimFile -Raw -ErrorAction Stop).Trim()) } catch {}
+    if ([Math]::Abs([Environment]::TickCount - $claim) -le 1500) { return $false }
+    [Environment]::TickCount | Set-Content $claimFile
+    return $true
+}
+
 # Find the WT window + tab element of this session via UI Automation.
 function FindOurTab {
     $t = OurTitle
@@ -303,7 +324,6 @@ function MarkAndWait {
     $marked = "$BELL " + (Norm $orig)
     [void][ClaudeWin]::SetConsoleTitleOf($ClaudePid, $marked)
     Log "  marked tab, waiting for Enter in terminal or manual switch"
-    $claimFile = Join-Path $stateDir 'switch.claim'
     $ring = $false; $lastBlink = -10000; $lastCheck = -10000; $enterDown = $false; $modsUsed = $false
     $sw = [Diagnostics.Stopwatch]::StartNew()
     $result = 'timeout'
@@ -320,10 +340,7 @@ function MarkAndWait {
         } elseif ($enterDown) {
             $enterDown = $false
             if (-not $modsUsed -and (TerminalInFront) -and -not (OurTabActive)) {
-                # one Enter switches only one waiting session
-                $claim = 0; try { $claim = [long]((Get-Content $claimFile -Raw).Trim()) } catch {}
-                if ([Math]::Abs([Environment]::TickCount - $claim) -gt 1500) {
-                    [Environment]::TickCount | Set-Content $claimFile
+                if (ClaimSwitch) {
                     Start-Sleep -Milliseconds 150
                     GoToOurTab
                     $result = 'enter'; break
@@ -336,6 +353,10 @@ function MarkAndWait {
             $lastCheck = $now
             if (-not (ClaudeAlive)) { $result = 'claude exited'; break }
             if (OurTabActive) { $result = 'user switched to tab'; break }
+            # user is waiting on another busy Claude tab (and not typing): just go
+            if ((FrontTabBusy) -and [ClaudeWin]::IdleMs() -gt 1500 -and (ClaimSwitch)) {
+                GoToOurTab; $result = 'front tab was busy'; break
+            }
             if ((PromptTicks) -ne $promptTicks) { $result = 'new prompt'; break }
             if (Superseded) { $result = 'superseded'; break }
         }
