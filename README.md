@@ -20,8 +20,10 @@ While a tab is marked, it switches to it when:
 
 - **you press Enter** anywhere in the terminal (e.g. sending a prompt in the tab you're on) — Shift/Ctrl/Alt+Enter don't count;
 - **the tab you're on is a Claude session that is still working** (spinner in its title) and:
-  - you haven't touched anything for **10 s** — you're just waiting on it, or
-  - you typed there without pressing Enter and then stopped for **30 s** — time to think before it moves you.
+  - there has been **no input at all for 10 s** (arrow keys, mouse and scrolling count as input too, so picking an option or reading doesn't get interrupted), and
+  - if you typed there without pressing Enter, also **30 s** since your last keystroke — time to think before it moves you.
+
+  A tab that is itself waiting on you (permission prompt, question) never counts as "still working".
 
 If you click over to the marked tab yourself, the mark simply disappears. With several finished tabs waiting, each Enter / trigger switches to only one of them.
 

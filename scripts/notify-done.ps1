@@ -27,8 +27,8 @@ param(
 )
 
 $SEEN_IDLE_SEC = 60
-$TYPE_QUIET_SEC = 10   # busy front tab, user only waiting: switch after this long without input
-$TYPING_PAUSE_SEC = 30 # busy front tab, user typed there (no Enter yet): give them this long to think
+$TYPE_QUIET_SEC = 10   # busy front tab: switch only after this long without ANY input (keys incl. arrows, mouse)
+$TYPING_PAUSE_SEC = 30 # ...and if the user typed there (no Enter yet): also this long since the last keystroke
 $FALLBACK_SEC  = 180
 $MAX_WATCH_H   = 12
 
@@ -358,11 +358,7 @@ function MarkAndWait {
     $fgT = [ClaudeWin]::WindowTitle([ClaudeWin]::Foreground())
     Log ("  marked tab; front=[{0}] busy={1} last input {2:N1}s ago" -f (Norm $fgT), (FrontTabBusy), ([ClaudeWin]::IdleMs() / 1000))
     $ring = $false; $lastBlink = -10000; $lastCheck = -10000; $enterDown = $false; $modsUsed = $false
-    # last time the user typed in the tab in front. Unknown before we started: count any input in the last
-    # few seconds as possible typing, so a half-written message just before Claude finished is respected.
-    $lastType = -1000000
-    $idle0 = [ClaudeWin]::IdleMs()
-    if ($idle0 -lt $TYPE_QUIET_SEC * 1000) { $lastType = -[long]$idle0 }
+    $lastType = -1000000   # last text keystroke in the tab in front
     $typedHere = $false   # a real keystroke seen in the tab in front since its last Enter
     $lastFront = Norm ([ClaudeWin]::WindowTitle([ClaudeWin]::Foreground()))
     $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -398,10 +394,12 @@ function MarkAndWait {
             # a different tab came to the front: typing in the old one doesn't count there
             $front = Norm ([ClaudeWin]::WindowTitle([ClaudeWin]::Foreground()))
             if ($front -ne $lastFront) { $lastFront = $front; $lastType = -1000000; $typedHere = $false }
-            # user is waiting on another busy Claude tab and hasn't typed there for a while: go
-            $quiet = if ($typedHere) { $TYPING_PAUSE_SEC } else { $TYPE_QUIET_SEC }
-            if ((FrontTabBusy) -and ($now - $lastType -ge $quiet * 1000) -and [ClaudeWin]::IdleMs() -gt 1500 -and (ClaimSwitch)) {
-                GoToOurTab; $result = ("front tab was busy, no typing for {0:N0}s" -f (($now - $lastType) / 1000)); break
+            # user is just waiting on another busy Claude tab: no input at all for a while (arrows, mouse and
+            # scrolling count too), and if they had typed there, a longer pause since the last keystroke
+            $idleOk  = [ClaudeWin]::IdleMs() -ge $TYPE_QUIET_SEC * 1000
+            $typeOk  = (-not $typedHere) -or ($now - $lastType -ge $TYPING_PAUSE_SEC * 1000)
+            if ((FrontTabBusy) -and $idleOk -and $typeOk -and (ClaimSwitch)) {
+                GoToOurTab; $result = ("front tab was busy, no input for {0:N0}s (typed there: {1})" -f ([ClaudeWin]::IdleMs() / 1000), $typedHere); break
             }
             if ((PromptTicks) -ne $promptTicks) { $result = 'new prompt'; break }
             if (Superseded) { $result = 'superseded'; break }
