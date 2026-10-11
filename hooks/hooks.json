@@ -1,0 +1,31 @@
+{
+  "description": "Chime + tab marking when Claude finishes (Windows / Windows Terminal)",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "${CLAUDE_PLUGIN_ROOT}/scripts/notify-done.ps1", "-Mode", "prompt"],
+            "async": true,
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "${CLAUDE_PLUGIN_ROOT}/scripts/notify-done.ps1"],
+            "async": true,
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

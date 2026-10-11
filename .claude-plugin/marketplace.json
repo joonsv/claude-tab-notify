@@ -1,0 +1,13 @@
+{
+  "name": "tab-notify",
+  "description": "Chime + Windows Terminal tab marking when Claude Code finishes",
+  "owner": {
+    "name": "Joons"
+  },
+  "plugins": [
+    {
+      "name": "tab-notify",
+      "source": "./"
+    }
+  ]
+}
