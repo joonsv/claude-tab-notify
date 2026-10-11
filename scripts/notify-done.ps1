@@ -71,7 +71,7 @@ function PromptTicks {
 }
 
 # ---------------------------------------------------------------- helper DLL (stop + watch)
-$dll = Join-Path $stateDir 'claude-win-v8.dll'
+$dll = Join-Path $stateDir 'claude-win-v9.dll'
 if (-not (Test-Path $dll)) {
     $src = @'
 using System;
@@ -223,6 +223,51 @@ public static class ClaudeWin {
     [DllImport("kernel32.dll")] static extern IntPtr CreateToolhelp32Snapshot(uint flags, uint pid);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, EntryPoint = "Process32FirstW")] static extern bool Process32First(IntPtr snap, ref PROCESSENTRY32 pe);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, EntryPoint = "Process32NextW")] static extern bool Process32Next(IntPtr snap, ref PROCESSENTRY32 pe);
+
+    // The chime: two soft rising "bloop" notes (A5 -> E6) with mallet-ish partials, a short pitch glide,
+    // a gentle low-pass and a fade-out. Generated instead of shipped so the plugin holds no binary file.
+    // Tweak the constants here (then delete done.wav in the state folder to regenerate).
+    public static byte[] ChimeWav() {
+        const int RATE = 44100;
+        const double DURATION = 0.62, VOLUME = 0.42, GAP = 0.085, GLIDE = 1.05, GLIDE_TAU = 0.012;
+        double[][] notes = { new[] { 880.0, 0.085, 0.85 }, new[] { 1318.5, 0.17, 1.0 } };   // Hz, decay s, gain
+        double[][] partials = { new[] { 1.0, 1.0 }, new[] { 2.0, 0.22 }, new[] { 3.0, 0.05 } }; // multiple, gain
+        int n = (int)(DURATION * RATE);
+        var buf = new double[n];
+        for (int idx = 0; idx < notes.Length; idx++) {
+            double f0 = notes[idx][0], tau = notes[idx][1], gain = notes[idx][2];
+            int s0 = (int)(idx * GAP * RATE);
+            var phases = new double[partials.Length];
+            for (int i = s0; i < n; i++) {
+                double t = (double)(i - s0) / RATE;
+                double attack = Math.Min(1.0, t / 0.004);
+                double f = f0 * (1 + (GLIDE - 1) * Math.Exp(-t / GLIDE_TAU));
+                double v = 0.0;
+                for (int k = 0; k < partials.Length; k++) {
+                    double mult = partials[k][0], g = partials[k][1];
+                    phases[k] += 2 * Math.PI * f * mult / RATE;
+                    v += g * Math.Sin(phases[k]) * Math.Exp(-t * mult / tau);
+                }
+                buf[i] += gain * attack * v;
+            }
+        }
+        double prev = 0.0, a = 0.55, peak = 0.0;
+        for (int i = 0; i < n; i++) { prev = prev + a * (buf[i] - prev); buf[i] = prev; }
+        int fade = (int)(0.04 * RATE);
+        for (int i = 0; i < fade; i++) buf[n - fade + i] *= 1 - (double)i / fade;
+        for (int i = 0; i < n; i++) peak = Math.Max(peak, Math.Abs(buf[i]));
+        if (peak == 0) peak = 1.0;
+        double scale = VOLUME * 32767 / peak;
+        var ms = new System.IO.MemoryStream();
+        var w = new System.IO.BinaryWriter(ms);
+        w.Write(Encoding.ASCII.GetBytes("RIFF")); w.Write(36 + n * 2); w.Write(Encoding.ASCII.GetBytes("WAVE"));
+        w.Write(Encoding.ASCII.GetBytes("fmt ")); w.Write(16); w.Write((short)1); w.Write((short)1);
+        w.Write(RATE); w.Write(RATE * 2); w.Write((short)2); w.Write((short)16);
+        w.Write(Encoding.ASCII.GetBytes("data")); w.Write(n * 2);
+        for (int i = 0; i < n; i++) w.Write((short)(int)(buf[i] * scale));
+        w.Flush();
+        return ms.ToArray();
+    }
 
     // "pid|exe" for each ancestor of pid, nearest first (parent, grandparent, ...)
     public static string[] Ancestors(uint pid) {
@@ -388,8 +433,11 @@ function GoToOurTab {
 $script:player = $null
 function Chime {
     if ($env:NOTIFY_DRYRUN) { Log '  DRYRUN chime'; return }
-    $wav = Join-Path $PSScriptRoot '..\sounds\done.wav'
-    if (Test-Path $wav) { $script:player = New-Object System.Media.SoundPlayer $wav; $script:player.Play() }
+    # generated on first use; replace this file with any .wav to use your own sound
+    $wav = Join-Path $stateDir 'done.wav'
+    if (-not (Test-Path $wav)) { [IO.File]::WriteAllBytes($wav, [ClaudeWin]::ChimeWav()) }
+    $script:player = New-Object System.Media.SoundPlayer $wav
+    $script:player.Play()
 }
 
 # Mark this tab (bell in the title + blinking progress ring) until the user switches to it themselves,

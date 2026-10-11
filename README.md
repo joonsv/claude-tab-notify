@@ -52,7 +52,7 @@ claude plugin install tab-notify@tab-notify
 
 ## Customize
 
-- **Sound:** tweak `sounds/make_chime.py` (pitch, volume, tempo) and run `python sounds/make_chime.py`, or replace `sounds/done.wav` with your own wav.
+- **Sound:** replace `%USERPROFILE%\.claude	ab-notify\done.wav` with any `.wav` you like. To tweak the built-in chime (pitch, volume, tempo), edit the constants in `ChimeWav()` in `scripts/notify-done.ps1` and delete that `done.wav` so it is regenerated.
 - **Timings:** `$SEEN_IDLE_SEC` (60), `$TYPE_QUIET_SEC` (10), `$TYPING_PAUSE_SEC` (30) and `$FALLBACK_SEC` (180) at the top of `scripts/notify-done.ps1`.
 
 ## What it does on your machine
@@ -62,8 +62,8 @@ Everything runs locally in Windows PowerShell 5.1. The plugin makes **no network
 - **Hooks:** on `UserPromptSubmit` it writes the current time to a small file; on `Stop` and on `Notification` (permission prompts and other "needs your input" events only) it starts a hidden PowerShell watcher for that session and exits.
 - **Keyboard and mouse state:** while a tab is marked, the watcher polls whether Enter, Shift/Ctrl/Alt or a text key is currently held down (`GetAsyncKeyState`) and how long ago the last input was (`GetLastInputInfo`). It only uses this to decide *when* to switch tabs. Which keys you type is never recorded, logged or stored.
 - **Windows and tabs:** it reads the foreground window and its title, checks whether something is fullscreen, briefly attaches to the Claude session's console to read and set that tab's title (the 🔔) and to write a Windows Terminal progress sequence (`OSC 9;4`, the blinking ring), and uses UI Automation to select the tab and bring the window to the front.
-- **Sound:** plays `sounds/done.wav` (a generated chime; `sounds/make_chime.py` is the generator).
-- **Files it writes:** `%USERPROFILE%\.claude\tab-notify\` holds per-session prompt times, a small helper DLL that the script compiles from the C# source embedded in `scripts/notify-done.ps1`, and `notify.log` (one line per decision: session id prefix, tab title, reason). Nothing else.
+- **Sound:** plays a chime that the script synthesizes itself (`ChimeWav()` in `scripts/notify-done.ps1`) and saves once as `done.wav` in the folder below.
+- **Files it writes:** `%USERPROFILE%\.claude\tab-notify\` holds per-session prompt times, the generated `done.wav`, a small helper DLL that the script compiles from the C# source embedded in `scripts/notify-done.ps1`, and `notify.log` (one line per decision: session id prefix, tab title, reason). Nothing else.
 - **Lifetime:** a watcher exits when you see the tab, send a new prompt, the session ends, or after at most 12 hours.
 
 ## Troubleshooting
