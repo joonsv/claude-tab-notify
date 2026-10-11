@@ -8,7 +8,7 @@ Claude Code plugin for **Windows**: a soft chime when Claude finishes, and your 
 |---|---|
 | You're in that session's tab and were active in the last 60 s | Nothing — you've seen it |
 | You're in that tab but idle (AFK) | Chime after 3 min, unless you do something first |
-| You're in **another tab** of Windows Terminal | Chime + the tab gets a 🔔 in its title and a blinking ring. It switches to that tab on your next **Enter** in the terminal — or right away if the tab you are on is a Claude session that is still working and you have not typed there for 10 s (you are just waiting on it). If you click over yourself, the mark disappears |
+| You're in **another tab** of Windows Terminal | Chime + the tab gets a 🔔 in its title and a blinking ring. It switches to that tab on your next **Enter** in the terminal — or right away if the tab you are on is a Claude session that is still working: after 10 s without input if you are just waiting on it, or after 30 s without typing if you had started typing there (time to think). If you click over yourself, the mark disappears |
 | You're in another app | Chime + the terminal comes to the front on the right tab |
 | Something is running fullscreen (game, video, F11) | Chime + tab mark, your focus is never stolen |
 
@@ -34,7 +34,7 @@ claude plugin install tab-notify@tab-notify
 ## Customize
 
 - **Sound:** tweak `sounds/make_chime.py` (pitch, volume, tempo) and run `python sounds/make_chime.py`, or replace `sounds/done.wav` with your own wav.
-- **Timings:** `$SEEN_IDLE_SEC` (60), `$TYPE_QUIET_SEC` (10) and `$FALLBACK_SEC` (180) at the top of `scripts/notify-done.ps1`.
+- **Timings:** `$SEEN_IDLE_SEC` (60), `$TYPE_QUIET_SEC` (10), `$TYPING_PAUSE_SEC` (30) and `$FALLBACK_SEC` (180) at the top of `scripts/notify-done.ps1`.
 
 ## Troubleshooting
 

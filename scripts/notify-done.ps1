@@ -9,7 +9,7 @@
 #                                                               blinking progress ring). Switch to it after
 #                                                               the user's next Enter in the terminal, or right
 #                                                               away if the tab in front is a busy Claude
-#                                                               session they haven't typed in for 10s; clear the mark if
+#                                                               session (after 10s idle, or 30s if they were typing there); clear the mark if
 #                                                               they switch to it themselves
 #       * user in another app                                -> chime + bring terminal to front on this tab
 #       * fullscreen app in front                            -> chime + mark the tab, never steal focus
@@ -24,7 +24,8 @@ param(
 )
 
 $SEEN_IDLE_SEC = 60
-$TYPE_QUIET_SEC = 10   # busy front tab: switch once the user hasn't typed there for this long
+$TYPE_QUIET_SEC = 10   # busy front tab, user only waiting: switch after this long without input
+$TYPING_PAUSE_SEC = 30 # busy front tab, user typed there (no Enter yet): give them this long to think
 $FALLBACK_SEC  = 180
 $MAX_WATCH_H   = 12
 
@@ -342,6 +343,7 @@ function MarkAndWait {
     $lastType = -1000000
     $idle0 = [ClaudeWin]::IdleMs()
     if ($idle0 -lt $TYPE_QUIET_SEC * 1000) { $lastType = -[long]$idle0 }
+    $typedHere = $false   # a real keystroke seen in the tab in front since its last Enter
     $lastFront = Norm ([ClaudeWin]::WindowTitle([ClaudeWin]::Foreground()))
     $sw = [Diagnostics.Stopwatch]::StartNew()
     $result = 'timeout'
@@ -351,7 +353,7 @@ function MarkAndWait {
         $now = $sw.ElapsedMilliseconds
 
         # Enter released while a terminal window of ours is in front (Shift/Ctrl/Alt+Enter don't count)
-        if ((TerminalInFront) -and [ClaudeWin]::TypingKeyDown()) { $lastType = $now }
+        if ((TerminalInFront) -and [ClaudeWin]::TypingKeyDown()) { $lastType = $now; $typedHere = $true }
         $down = [ClaudeWin]::KeyDown(0x0D)
         if ($down) {
             if ([ClaudeWin]::KeyDown(0x10) -or [ClaudeWin]::KeyDown(0x11) -or [ClaudeWin]::KeyDown(0x12)) { $modsUsed = $true }
@@ -365,6 +367,7 @@ function MarkAndWait {
                     $result = 'enter'; break
                 }
             }
+            if (-not $modsUsed) { $typedHere = $false }
             $modsUsed = $false
         }
 
@@ -374,9 +377,10 @@ function MarkAndWait {
             if (OurTabActive) { $result = 'user switched to tab'; break }
             # a different tab came to the front: typing in the old one doesn't count there
             $front = Norm ([ClaudeWin]::WindowTitle([ClaudeWin]::Foreground()))
-            if ($front -ne $lastFront) { $lastFront = $front; $lastType = -1000000 }
+            if ($front -ne $lastFront) { $lastFront = $front; $lastType = -1000000; $typedHere = $false }
             # user is waiting on another busy Claude tab and hasn't typed there for a while: go
-            if ((FrontTabBusy) -and ($now - $lastType -ge $TYPE_QUIET_SEC * 1000) -and [ClaudeWin]::IdleMs() -gt 1500 -and (ClaimSwitch)) {
+            $quiet = if ($typedHere) { $TYPING_PAUSE_SEC } else { $TYPE_QUIET_SEC }
+            if ((FrontTabBusy) -and ($now - $lastType -ge $quiet * 1000) -and [ClaudeWin]::IdleMs() -gt 1500 -and (ClaimSwitch)) {
                 GoToOurTab; $result = ("front tab was busy, no typing for {0:N0}s" -f (($now - $lastType) / 1000)); break
             }
             if ((PromptTicks) -ne $promptTicks) { $result = 'new prompt'; break }
