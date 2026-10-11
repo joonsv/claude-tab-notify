@@ -1,7 +1,8 @@
 # tab-notify: Claude Code notification hook (per session / per Windows Terminal tab).
 #   -Mode prompt : (UserPromptSubmit) remember when the prompt was sent
 #   -Mode stop   : (Stop, and Notification when Claude needs input: permission prompt, question) find this
-#                  session's terminal + tab, then hand off to a detached watcher
+#                  session's terminal + tab; if another app is in front, chime + bring it up right here (instant),
+#                  otherwise hand off to a detached watcher
 #   -Mode watch  : the watcher. When Claude finishes or needs input:
 #       * this tab in front, user active in the last 60s   -> nothing, they've seen it
 #       * this tab in front, user idle                       -> wait up to 3 min; cancel on input here or a
@@ -69,34 +70,8 @@ function PromptTicks {
     return [long]0
 }
 
-if ($Mode -eq 'stop') {
-    # Walk up from this hook process (must be spawned without an MSYS shell in between, or the
-    # parent chain breaks): the nearest claude/node ancestor owns this session's console (= tab),
-    # the first ancestor with a visible window is the terminal app (Windows Terminal, conhost, VS Code).
-    $procs = @{}
-    Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Name | ForEach-Object { $procs[[int]$_.ProcessId] = $_ }
-    $cur = [int]$procs[$PID].ParentProcessId
-    for ($i = 0; $i -lt 12 -and $procs[$cur]; $i++) {
-        $p = $procs[$cur]
-        if (-not $ClaudePid -and $p.Name -match '^(claude|node)\.exe$') { $ClaudePid = $cur }
-        $gp = Get-Process -Id $cur -ErrorAction SilentlyContinue
-        if ($gp -and $gp.MainWindowHandle -ne [IntPtr]::Zero) {
-            $OwnerPid = $cur; $OwnerName = $p.Name; $MainHwnd = $gp.MainWindowHandle.ToInt64(); break
-        }
-        $cur = [int]$p.ParentProcessId
-    }
-    $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"",
-        '-Mode', 'watch', '-Sid', $Sid, '-ClaudePid', $ClaudePid, '-OwnerPid', $OwnerPid,
-        '-OwnerName', "`"$OwnerName`"", '-MainHwnd', $MainHwnd, '-StopTicks', [DateTime]::UtcNow.Ticks,
-        '-Event', $Event, '-Kind', $(if ($Kind) { $Kind } else { 'none' }))
-    if ($Event -ne 'Notification') { Remove-Item $awaitFile -ErrorAction SilentlyContinue }
-    Start-Process powershell.exe -ArgumentList $argList -WindowStyle Hidden
-    exit 0
-}
-
-# ---------------------------------------------------------------- watch mode
-$PID | Set-Content $watcherFile
-$dll = Join-Path $stateDir 'claude-win-v7.dll'
+# ---------------------------------------------------------------- helper DLL (stop + watch)
+$dll = Join-Path $stateDir 'claude-win-v8.dll'
 if (-not (Test-Path $dll)) {
     $src = @'
 using System;
@@ -239,6 +214,35 @@ public static class ClaudeWin {
 
     [DllImport("user32.dll")] static extern void SwitchToThisWindow(IntPtr h, bool altTab);
 
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct PROCESSENTRY32 {
+        public uint dwSize, cntUsage, th32ProcessID; public IntPtr th32DefaultHeapID;
+        public uint th32ModuleID, cntThreads, th32ParentProcessID; public int pcPriClassBase; public uint dwFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string szExeFile;
+    }
+    [DllImport("kernel32.dll")] static extern IntPtr CreateToolhelp32Snapshot(uint flags, uint pid);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, EntryPoint = "Process32FirstW")] static extern bool Process32First(IntPtr snap, ref PROCESSENTRY32 pe);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, EntryPoint = "Process32NextW")] static extern bool Process32Next(IntPtr snap, ref PROCESSENTRY32 pe);
+
+    // "pid|exe" for each ancestor of pid, nearest first (parent, grandparent, ...)
+    public static string[] Ancestors(uint pid) {
+        var parent = new Dictionary<uint, uint>(); var name = new Dictionary<uint, string>();
+        IntPtr snap = CreateToolhelp32Snapshot(2, 0); // TH32CS_SNAPPROCESS
+        var pe = new PROCESSENTRY32(); pe.dwSize = (uint)Marshal.SizeOf(typeof(PROCESSENTRY32));
+        if (Process32First(snap, ref pe)) {
+            do { parent[pe.th32ProcessID] = pe.th32ParentProcessID; name[pe.th32ProcessID] = pe.szExeFile; }
+            while (Process32Next(snap, ref pe));
+        }
+        CloseHandle(snap);
+        var list = new List<string>(); uint cur = pid;
+        for (int i = 0; i < 16 && parent.ContainsKey(cur); i++) {
+            cur = parent[cur];
+            if (!name.ContainsKey(cur)) break;
+            list.Add(cur + "|" + name[cur]);
+        }
+        return list.ToArray();
+    }
+
     // Windows refuses SetForegroundWindow from a background process while the user is busy in another
     // app (foreground lock), so try progressively stronger ways. Returns which one worked, or "failed".
     public static string Focus(IntPtr h) {
@@ -275,6 +279,20 @@ public static class ClaudeWin {
     Add-Type -TypeDefinition $src -OutputAssembly $dll -OutputType Library
 }
 Add-Type -Path $dll
+
+if ($Mode -eq 'stop') {
+    # Walk up from this hook process (must be spawned without an MSYS shell in between, or the parent
+    # chain breaks): the nearest claude/node ancestor owns this session's console (= tab), the first
+    # ancestor with a visible window is the terminal app (Windows Terminal, conhost, VS Code).
+    foreach ($a in [ClaudeWin]::Ancestors($PID)) {
+        $apid, $aname = $a.Split('|', 2); $apid = [int]$apid
+        if (-not $ClaudePid -and $aname -match '^(claude|node)\.exe$') { $ClaudePid = $apid }
+        $gp = Get-Process -Id $apid -ErrorAction SilentlyContinue
+        if ($gp -and $gp.MainWindowHandle -ne [IntPtr]::Zero) {
+            $OwnerPid = $apid; $OwnerName = $aname; $MainHwnd = $gp.MainWindowHandle.ToInt64(); break
+        }
+    }
+}
 
 $stopTick = [ClaudeWin]::Now()
 $stopTime = if ($StopTicks) { New-Object DateTime $StopTicks, ([DateTimeKind]::Utc) } else { [DateTime]::UtcNow }
@@ -347,12 +365,21 @@ function FindOurTab {
 
 function GoToOurTab {
     if ($env:NOTIFY_DRYRUN) { Log '  DRYRUN would switch to tab'; return }
-    $found = if ($isWT) { FindOurTab } else { $null }
-    if ($found) {
-        try { $found.Tab.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select() } catch {}
-        $how = [ClaudeWin]::Focus($found.Hwnd)
-        Log "  selected tab, bring window to front: $how"
-    } elseif ($mainHwndPtr -ne [IntPtr]::Zero) {
+    if ($isWT) {
+        $wins = @([ClaudeWin]::WindowsOf($OwnerPid, 'CASCADIA_HOSTING_WINDOW_CLASS'))
+        $how = $null
+        # one terminal window: bring it up first (instant), then select the tab
+        if ($wins.Count -eq 1) { $how = [ClaudeWin]::Focus($wins[0]) }
+        $found = FindOurTab
+        if ($found) {
+            try { $found.Tab.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select() } catch {}
+            if (-not $how) { $how = [ClaudeWin]::Focus($found.Hwnd) }
+            Log "  selected tab, bring window to front: $how"
+            return
+        }
+        if ($how) { Log "  tab not found, bring window to front: $how"; return }
+    }
+    if ($mainHwndPtr -ne [IntPtr]::Zero) {
         $how = [ClaudeWin]::Focus($mainHwndPtr)
         Log "  tab not found, bring window to front: $how"
     }
@@ -446,22 +473,48 @@ function MarkAndWait {
     Log "  unmarked: $result"
 }
 
+# Don't yank focus mid-keystroke: only waits if a key is down right now, then until 150 ms without
+# one (max 1 s). Mouse movement never delays, it can't land in the wrong window.
+function WaitTypingBurst {
+    $sw = [Diagnostics.Stopwatch]::StartNew(); $lastKey = -1000
+    while ($sw.ElapsedMilliseconds -lt 1000) {
+        if ([ClaudeWin]::TypingKeyDown() -or [ClaudeWin]::KeyDown(0x0D)) { $lastKey = $sw.ElapsedMilliseconds }
+        if ($sw.ElapsedMilliseconds - $lastKey -ge 150) { break }
+        Start-Sleep -Milliseconds 15
+    }
+}
+
 function HandleNotInFront {
     Chime
     if ((TerminalInFront) -or [ClaudeWin]::ForegroundIsFullscreen()) {
         MarkAndWait
     } else {
-        # other app: bring the terminal up on this tab, but not mid-keystroke: wait until no key has
-        # been down for 300 ms (max 3 s). Mouse movement doesn't count, it can't land in the wrong window.
-        $sw = [Diagnostics.Stopwatch]::StartNew(); $lastKey = 0
-        while ($sw.ElapsedMilliseconds -lt 3000) {
-            if ([ClaudeWin]::TypingKeyDown() -or [ClaudeWin]::KeyDown(0x0D)) { $lastKey = $sw.ElapsedMilliseconds }
-            if ($sw.ElapsedMilliseconds - $lastKey -ge 300) { break }
-            Start-Sleep -Milliseconds 25
-        }
+        WaitTypingBurst
         if ([ClaudeWin]::ForegroundIsFullscreen()) { MarkAndWait } else { GoToOurTab }
     }
 }
+
+if ($Mode -eq 'stop') {
+    if ($Event -ne 'Notification') { Remove-Item $awaitFile -ErrorAction SilentlyContinue }
+    $PID | Set-Content $watcherFile   # supersedes an older watcher of this session
+    if (-not (OurTabActive) -and -not (TerminalInFront) -and -not [ClaudeWin]::ForegroundIsFullscreen()) {
+        if ($Event -eq 'Notification') { OurTitle | Set-Content $awaitFile }
+        Chime
+        WaitTypingBurst
+        GoToOurTab
+        Log ("{0}: other app in front -> brought tab [{1}] up from the hook" -f $(if ($Event -eq 'Notification') { "needs input ($Kind)" } else { 'finished' }), (OurTitle))
+        if ($script:player) { Start-Sleep -Milliseconds 700 }   # let the chime finish
+        if (-not (Superseded)) { Remove-Item $watcherFile -ErrorAction SilentlyContinue }
+        exit 0
+    }
+    $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"",
+        '-Mode', 'watch', '-Sid', $Sid, '-ClaudePid', $ClaudePid, '-OwnerPid', $OwnerPid,
+        '-OwnerName', "`"$OwnerName`"", '-MainHwnd', $MainHwnd, '-StopTicks', [DateTime]::UtcNow.Ticks,
+        '-Event', $Event, '-Kind', $(if ($Kind) { $Kind } else { 'none' }))
+    Start-Process powershell.exe -ArgumentList $argList -WindowStyle Hidden
+    exit 0
+}
+$PID | Set-Content $watcherFile
 
 $what = if ($Event -eq 'Notification') { "needs input ($Kind)" } else { 'finished' }
 if ($Event -eq 'Notification') { OurTitle | Set-Content $awaitFile }
