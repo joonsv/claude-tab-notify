@@ -451,9 +451,14 @@ function HandleNotInFront {
     if ((TerminalInFront) -or [ClaudeWin]::ForegroundIsFullscreen()) {
         MarkAndWait
     } else {
-        # other app: bring the terminal up on this tab, after a short typing pause (max 8s)
-        $t0 = Get-Date
-        while ([ClaudeWin]::IdleMs() -lt 1200 -and ((Get-Date) - $t0).TotalSeconds -lt 8) { Start-Sleep -Milliseconds 200 }
+        # other app: bring the terminal up on this tab, but not mid-keystroke: wait until no key has
+        # been down for 300 ms (max 3 s). Mouse movement doesn't count, it can't land in the wrong window.
+        $sw = [Diagnostics.Stopwatch]::StartNew(); $lastKey = 0
+        while ($sw.ElapsedMilliseconds -lt 3000) {
+            if ([ClaudeWin]::TypingKeyDown() -or [ClaudeWin]::KeyDown(0x0D)) { $lastKey = $sw.ElapsedMilliseconds }
+            if ($sw.ElapsedMilliseconds - $lastKey -ge 300) { break }
+            Start-Sleep -Milliseconds 25
+        }
         if ([ClaudeWin]::ForegroundIsFullscreen()) { MarkAndWait } else { GoToOurTab }
     }
 }
