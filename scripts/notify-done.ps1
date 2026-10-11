@@ -79,7 +79,7 @@ if ($Mode -eq 'stop') {
 
 # ---------------------------------------------------------------- watch mode
 $PID | Set-Content $watcherFile
-$dll = Join-Path $stateDir 'claude-win-v4.dll'
+$dll = Join-Path $stateDir 'claude-win-v5.dll'
 if (-not (Test-Path $dll)) {
     $src = @'
 using System;
@@ -126,6 +126,16 @@ public static class ClaudeWin {
     public static uint WindowPid(IntPtr h) { uint p; GetWindowThreadProcessId(h, out p); return p; }
     public static string WindowTitle(IntPtr h) { var sb = new StringBuilder(1024); GetWindowText(h, sb, 1024); return sb.ToString(); }
     public static bool KeyDown(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
+    // A key that edits text (letters, digits, punctuation, space, backspace, delete) is held down.
+    // Ctrl/Alt combos are shortcuts, not typing.
+    public static bool TypingKeyDown() {
+        if (KeyDown(0x11) || KeyDown(0x12)) return false;
+        int[] r = { 0x08, 0x08, 0x20, 0x20, 0x2E, 0x2E, 0x30, 0x39, 0x41, 0x5A, 0x60, 0x6F, 0xBA, 0xC0, 0xDB, 0xDF, 0xE2, 0xE2 };
+        for (int i = 0; i < r.Length; i += 2)
+            for (int vk = r[i]; vk <= r[i + 1]; vk++)
+                if (KeyDown(vk)) return true;
+        return false;
+    }
 
     // The console of a process = its terminal tab. We attach only briefly: staying attached would keep
     // the tab alive after Claude exits and expose us to that tab's Ctrl+C.
@@ -325,6 +335,9 @@ function MarkAndWait {
     [void][ClaudeWin]::SetConsoleTitleOf($ClaudePid, $marked)
     Log "  marked tab, waiting for Enter in terminal or manual switch"
     $ring = $false; $lastBlink = -10000; $lastCheck = -10000; $enterDown = $false; $modsUsed = $false
+    # $typed: the user typed in the tab in front since its last Enter -> they're composing; only Enter switches
+    $typed = $false
+    $lastFront = Norm ([ClaudeWin]::WindowTitle([ClaudeWin]::Foreground()))
     $sw = [Diagnostics.Stopwatch]::StartNew()
     $result = 'timeout'
     $deadline = (Get-Date).AddHours($MAX_WATCH_H)
@@ -333,6 +346,7 @@ function MarkAndWait {
         $now = $sw.ElapsedMilliseconds
 
         # Enter released while a terminal window of ours is in front (Shift/Ctrl/Alt+Enter don't count)
+        if (-not $typed -and (TerminalInFront) -and [ClaudeWin]::TypingKeyDown()) { $typed = $true }
         $down = [ClaudeWin]::KeyDown(0x0D)
         if ($down) {
             if ([ClaudeWin]::KeyDown(0x10) -or [ClaudeWin]::KeyDown(0x11) -or [ClaudeWin]::KeyDown(0x12)) { $modsUsed = $true }
@@ -346,6 +360,7 @@ function MarkAndWait {
                     $result = 'enter'; break
                 }
             }
+            if (-not $modsUsed) { $typed = $false }
             $modsUsed = $false
         }
 
@@ -353,8 +368,11 @@ function MarkAndWait {
             $lastCheck = $now
             if (-not (ClaudeAlive)) { $result = 'claude exited'; break }
             if (OurTabActive) { $result = 'user switched to tab'; break }
-            # user is waiting on another busy Claude tab (and not typing): just go
-            if ((FrontTabBusy) -and [ClaudeWin]::IdleMs() -gt 1500 -and (ClaimSwitch)) {
+            # a different tab came to the front: typing in the old one doesn't count there
+            $front = Norm ([ClaudeWin]::WindowTitle([ClaudeWin]::Foreground()))
+            if ($front -ne $lastFront) { $lastFront = $front; $typed = $false }
+            # user is just waiting on another busy Claude tab (hasn't typed there): go right away
+            if ((FrontTabBusy) -and -not $typed -and [ClaudeWin]::IdleMs() -gt 1500 -and (ClaimSwitch)) {
                 GoToOurTab; $result = 'front tab was busy'; break
             }
             if ((PromptTicks) -ne $promptTicks) { $result = 'new prompt'; break }

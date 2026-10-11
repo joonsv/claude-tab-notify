@@ -8,7 +8,7 @@ Claude Code plugin for **Windows**: a soft chime when Claude finishes, and your 
 |---|---|
 | You're in that session's tab and were active in the last 60 s | Nothing — you've seen it |
 | You're in that tab but idle (AFK) | Chime after 3 min, unless you do something first |
-| You're in **another tab** of Windows Terminal | Chime + the tab gets a 🔔 in its title and a blinking ring. It switches to that tab on your next **Enter** in the terminal — or right away if the tab you are on is a Claude session that is still working (you are just waiting on it). If you click over yourself, the mark disappears |
+| You're in **another tab** of Windows Terminal | Chime + the tab gets a 🔔 in its title and a blinking ring. It switches to that tab on your next **Enter** in the terminal — or right away if the tab you are on is a Claude session that is still working and you have not typed anything there (you are just waiting on it). If you click over yourself, the mark disappears |
 | You're in another app | Chime + the terminal comes to the front on the right tab |
 | Something is running fullscreen (game, video, F11) | Chime + tab mark, your focus is never stolen |
 
