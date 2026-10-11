@@ -334,7 +334,8 @@ function MarkAndWait {
     if ($null -eq $orig) { return }
     $marked = "$BELL " + (Norm $orig)
     [void][ClaudeWin]::SetConsoleTitleOf($ClaudePid, $marked)
-    Log "  marked tab, waiting for Enter in terminal or manual switch"
+    $fgT = [ClaudeWin]::WindowTitle([ClaudeWin]::Foreground())
+    Log ("  marked tab; front=[{0}] busy={1} last input {2:N1}s ago" -f (Norm $fgT), (FrontTabBusy), ([ClaudeWin]::IdleMs() / 1000))
     $ring = $false; $lastBlink = -10000; $lastCheck = -10000; $enterDown = $false; $modsUsed = $false
     # last time the user typed in the tab in front. Unknown before we started: count any input in the last
     # few seconds as possible typing, so a half-written message just before Claude finished is respected.
@@ -376,7 +377,7 @@ function MarkAndWait {
             if ($front -ne $lastFront) { $lastFront = $front; $lastType = -1000000 }
             # user is waiting on another busy Claude tab and hasn't typed there for a while: go
             if ((FrontTabBusy) -and ($now - $lastType -ge $TYPE_QUIET_SEC * 1000) -and [ClaudeWin]::IdleMs() -gt 1500 -and (ClaimSwitch)) {
-                GoToOurTab; $result = 'front tab was busy'; break
+                GoToOurTab; $result = ("front tab was busy, no typing for {0:N0}s" -f (($now - $lastType) / 1000)); break
             }
             if ((PromptTicks) -ne $promptTicks) { $result = 'new prompt'; break }
             if (Superseded) { $result = 'superseded'; break }
