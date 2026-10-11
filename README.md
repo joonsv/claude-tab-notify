@@ -52,7 +52,7 @@ claude plugin install tab-notify@tab-notify
 
 ## Customize
 
-- **Sound:** replace `%USERPROFILE%\.claude	ab-notify\done.wav` with any `.wav` you like. To tweak the built-in chime (pitch, volume, tempo), edit the constants in `ChimeWav()` in `scripts/notify-done.ps1` and delete that `done.wav` so it is regenerated.
+- **Sound:** replace `%USERPROFILE%\.claude\tab-notify\done.wav` with any `.wav` you like. To tweak the built-in chime (pitch, volume, tempo), edit the constants in `ChimeWav()` in `scripts/notify-done.ps1` and delete that `done.wav` so it is regenerated.
 - **Timings:** `$SEEN_IDLE_SEC` (60), `$TYPE_QUIET_SEC` (10), `$TYPING_PAUSE_SEC` (30) and `$FALLBACK_SEC` (180) at the top of `scripts/notify-done.ps1`.
 
 ## What it does on your machine
