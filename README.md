@@ -58,3 +58,7 @@ claude plugin install tab-notify@tab-notify
 ## Troubleshooting
 
 Every decision is logged to `%USERPROFILE%\.claude\tab-notify\notify.log` with its reason (`tab not in front`, `unmarked: enter`, `skip: ... seen`, ...).
+
+## License
+
+MIT — see [LICENSE](LICENSE).

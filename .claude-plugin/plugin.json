@@ -2,5 +2,7 @@
   "name": "tab-notify",
   "version": "0.2.2",
   "description": "Windows: chime when Claude finishes or needs input, mark its Windows Terminal tab (bell + blinking ring) and switch to it on your next Enter - quiet when you're already watching.",
-  "author": { "name": "Joons" }
+  "author": { "name": "Joons" },
+  "license": "MIT",
+  "repository": "https://github.com/joonsv/claude-tab-notify"
 }
