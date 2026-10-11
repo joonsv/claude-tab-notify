@@ -96,7 +96,7 @@ if ($Mode -eq 'stop') {
 
 # ---------------------------------------------------------------- watch mode
 $PID | Set-Content $watcherFile
-$dll = Join-Path $stateDir 'claude-win-v6.dll'
+$dll = Join-Path $stateDir 'claude-win-v7.dll'
 if (-not (Test-Path $dll)) {
     $src = @'
 using System;
@@ -237,7 +237,11 @@ public static class ClaudeWin {
         return r.L <= mi.rcMonitor.L && r.T <= mi.rcMonitor.T && r.R >= mi.rcMonitor.R && r.B >= mi.rcMonitor.B;
     }
 
-    public static bool Focus(IntPtr h) {
+    [DllImport("user32.dll")] static extern void SwitchToThisWindow(IntPtr h, bool altTab);
+
+    // Windows refuses SetForegroundWindow from a background process while the user is busy in another
+    // app (foreground lock), so try progressively stronger ways. Returns which one worked, or "failed".
+    public static string Focus(IntPtr h) {
         if (IsIconic(h)) ShowWindow(h, 9); // SW_RESTORE
         IntPtr fg = GetForegroundWindow();
         uint dummy;
@@ -247,13 +251,24 @@ public static class ClaudeWin {
         BringWindowToTop(h);
         SetForegroundWindow(h);
         if (attached) AttachThreadInput(me, fgThread, false);
-        if (GetForegroundWindow() == h) return true;
+        if (GetForegroundWindow() == h) return "attach";
 
-        // fallback: a synthetic Alt press lifts the foreground lock
+        // a synthetic Alt press lifts the foreground lock
         keybd_event(0x12, 0, 0, UIntPtr.Zero);
         SetForegroundWindow(h);
         keybd_event(0x12, 0, 2, UIntPtr.Zero);
-        return GetForegroundWindow() == h;
+        if (GetForegroundWindow() == h) return "alt";
+
+        SwitchToThisWindow(h, true);
+        System.Threading.Thread.Sleep(80);
+        if (GetForegroundWindow() == h) return "switchto";
+
+        // last resort: minimize + restore always activates (restore returns to maximized if it was)
+        ShowWindow(h, 6);  // SW_MINIMIZE
+        ShowWindow(h, 9);  // SW_RESTORE
+        SetForegroundWindow(h);
+        System.Threading.Thread.Sleep(80);
+        return GetForegroundWindow() == h ? "minrestore" : "failed";
     }
 }
 '@
@@ -335,11 +350,11 @@ function GoToOurTab {
     $found = if ($isWT) { FindOurTab } else { $null }
     if ($found) {
         try { $found.Tab.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select() } catch {}
-        [void][ClaudeWin]::Focus($found.Hwnd)
-        Log '  switched to window + tab'
+        $how = [ClaudeWin]::Focus($found.Hwnd)
+        Log "  selected tab, bring window to front: $how"
     } elseif ($mainHwndPtr -ne [IntPtr]::Zero) {
-        [void][ClaudeWin]::Focus($mainHwndPtr)
-        Log '  focused window (tab not found)'
+        $how = [ClaudeWin]::Focus($mainHwndPtr)
+        Log "  tab not found, bring window to front: $how"
     }
 }
 
