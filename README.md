@@ -1,41 +1,41 @@
 # tab-notify
 
-Claude Code-plugin voor **Windows**: een zachte chime als Claude klaar is, en je terminal(tab) komt naar je toe — maar alleen als je het nog niet gezien hebt.
+Claude Code plugin for **Windows**: a soft chime when Claude finishes, and your terminal (tab) comes to you — but only if you haven't already seen it.
 
-## Wat het doet
+## What it does
 
-| Situatie als Claude klaar is | Wat er gebeurt |
+| When Claude finishes and… | What happens |
 |---|---|
-| Je zit in de tab van die sessie en was de laatste 60 sec actief | Niks — je hebt het gezien |
-| Je zit in die tab maar bent idle (AFK) | Chime na 3 min, tenzij je eerder iets doet |
-| Je zit in een **andere tab** van Windows Terminal | Chime + tab krijgt 🔔 in de titel en een knipperende ring. Bij je volgende **Enter** in de terminal wisselt hij naar die tab; klik je er zelf heen, dan verdwijnt de markering |
-| Je zit in een ander programma | Chime + terminal naar voren op de juiste tab |
-| Er draait iets fullscreen (game, video, F11) | Chime + markering, je focus wordt niet gestolen |
+| You're in that session's tab and were active in the last 60 s | Nothing — you've seen it |
+| You're in that tab but idle (AFK) | Chime after 3 min, unless you do something first |
+| You're in **another tab** of Windows Terminal | Chime + the tab gets a 🔔 in its title and a blinking ring. On your next **Enter** in the terminal it switches to that tab; if you click over yourself, the mark disappears |
+| You're in another app | Chime + the terminal comes to the front on the right tab |
+| Something is running fullscreen (game, video, F11) | Chime + tab mark, your focus is never stolen |
 
-Tab-detectie/markering werkt in **Windows Terminal**. In andere terminals (conhost, VS Code) krijg je de chime en het venster naar voren.
+Tab detection and marking work in **Windows Terminal**. In other terminals (conhost, VS Code) you get the chime and the window brought to the front.
 
-## Installeren
+## Install
 
-Typ in Claude Code (terminal):
+Type this in Claude Code (in a terminal):
 
 ```
 /plugin install tab-notify --marketplace joonsv/claude-tab-notify
 ```
 
-Kies `y` om de marketplace toe te voegen en daarna een scope (user = voor al je projecten). Herstart daarna je Claude-sessies.
+Answer `y` to add the marketplace, then pick a scope (user = all your projects). Restart your Claude sessions afterwards.
 
-Lokaal vanaf een map (zonder GitHub):
+From a local folder (without GitHub):
 
 ```
-claude plugin marketplace add C:\pad\naar\claude-tab-notify
+claude plugin marketplace add C:\path\to\claude-tab-notify
 claude plugin install tab-notify@tab-notify
 ```
 
-## Aanpassen
+## Customize
 
-- **Geluid:** pas `sounds/make_chime.py` aan (toonhoogte, volume, tempo) en draai `python sounds/make_chime.py`, of vervang `sounds/done.wav` door je eigen wav.
-- **Tijden:** `$SEEN_IDLE_SEC` (60) en `$FALLBACK_SEC` (180) bovenin `scripts/notify-done.ps1`.
+- **Sound:** tweak `sounds/make_chime.py` (pitch, volume, tempo) and run `python sounds/make_chime.py`, or replace `sounds/done.wav` with your own wav.
+- **Timings:** `$SEEN_IDLE_SEC` (60) and `$FALLBACK_SEC` (180) at the top of `scripts/notify-done.ps1`.
 
-## Problemen
+## Troubleshooting
 
-Elke beslissing komt in `%USERPROFILE%\.claude\tab-notify\notify.log`, met reden (`tab not in front`, `unmarked: enter`, `skip: ... seen`, ...).
+Every decision is logged to `%USERPROFILE%\.claude\tab-notify\notify.log` with its reason (`tab not in front`, `unmarked: enter`, `skip: ... seen`, ...).
