@@ -1,7 +1,8 @@
 # tab-notify: Claude Code notification hook (per session / per Windows Terminal tab).
 #   -Mode prompt : (UserPromptSubmit) remember when the prompt was sent
-#   -Mode stop   : (Stop) find this session's terminal + tab, then hand off to a detached watcher
-#   -Mode watch  : the watcher. When Claude finishes:
+#   -Mode stop   : (Stop, and Notification when Claude needs input: permission prompt, question) find this
+#                  session's terminal + tab, then hand off to a detached watcher
+#   -Mode watch  : the watcher. When Claude finishes or needs input:
 #       * this tab in front, user active in the last 60s   -> nothing, they've seen it
 #       * this tab in front, user idle                       -> wait up to 3 min; cancel on input here or a
 #                                                               new prompt; otherwise chime
@@ -20,7 +21,9 @@ param(
     [int]$OwnerPid = 0,
     [string]$OwnerName = '',
     [long]$MainHwnd = 0,
-    [long]$StopTicks = 0
+    [long]$StopTicks = 0,
+    [string]$Event = 'Stop',
+    [string]$Kind = ''
 )
 
 $SEEN_IDLE_SEC = 60
@@ -35,12 +38,22 @@ $stateDir = Join-Path $env:USERPROFILE '.claude\tab-notify'
 if (-not (Test-Path $stateDir)) { New-Item -ItemType Directory $stateDir | Out-Null }
 
 if ($Mode -ne 'watch') {
-    try { $j = [Console]::In.ReadToEnd() | ConvertFrom-Json; if ($j.session_id) { $Sid = $j.session_id } } catch {}
+    try {
+        $j = [Console]::In.ReadToEnd() | ConvertFrom-Json
+        if ($j.session_id) { $Sid = $j.session_id }
+        if ($j.hook_event_name) { $Event = $j.hook_event_name }
+        if ($j.notification_type) { $Kind = $j.notification_type }
+    } catch {}
 }
 $promptFile  = Join-Path $stateDir "$Sid.prompt"
 $watcherFile = Join-Path $stateDir "$Sid.watcher"
 
+# "<sid>.awaiting" holds the tab title of a session blocked on the user (permission prompt, question):
+# its spinner may still turn, but the user is not just waiting on it, so it must not count as busy.
+$awaitFile = Join-Path $stateDir "$Sid.awaiting"
+
 if ($Mode -eq 'prompt') {
+    Remove-Item $awaitFile -ErrorAction SilentlyContinue
     [DateTime]::UtcNow.Ticks | Set-Content $promptFile
     exit 0
 }
@@ -74,7 +87,9 @@ if ($Mode -eq 'stop') {
     }
     $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"",
         '-Mode', 'watch', '-Sid', $Sid, '-ClaudePid', $ClaudePid, '-OwnerPid', $OwnerPid,
-        '-OwnerName', "`"$OwnerName`"", '-MainHwnd', $MainHwnd, '-StopTicks', [DateTime]::UtcNow.Ticks)
+        '-OwnerName', "`"$OwnerName`"", '-MainHwnd', $MainHwnd, '-StopTicks', [DateTime]::UtcNow.Ticks,
+        '-Event', $Event, '-Kind', $(if ($Kind) { $Kind } else { 'none' }))
+    if ($Event -ne 'Notification') { Remove-Item $awaitFile -ErrorAction SilentlyContinue }
     Start-Process powershell.exe -ArgumentList $argList -WindowStyle Hidden
     exit 0
 }
@@ -279,7 +294,12 @@ function FrontTabBusy {
     $fg = [ClaudeWin]::Foreground()
     if ([ClaudeWin]::WindowPid($fg) -ne $OwnerPid) { return $false }
     $t = [ClaudeWin]::WindowTitle($fg)
-    return $t.Length -gt 0 -and ($SPIN -contains $t[0])
+    if (-not ($t.Length -gt 0 -and ($SPIN -contains $t[0]))) { return $false }
+    $n = Norm $t
+    foreach ($f in (Get-ChildItem $stateDir -Filter '*.awaiting' -ErrorAction SilentlyContinue)) {
+        try { if ((Get-Content $f.FullName -Raw -ErrorAction Stop).Trim() -eq $n) { return $false } } catch {}
+    }
+    return $true
 }
 
 # Only one waiting session may switch per trigger (Enter press / busy-tab check).
@@ -416,7 +436,9 @@ function HandleNotInFront {
     }
 }
 
-Log ("stop: claude pid={0}, terminal={1}, tab=[{2}]" -f $ClaudePid, $OwnerName, (OurTitle))
+$what = if ($Event -eq 'Notification') { "needs input ($Kind)" } else { 'finished' }
+if ($Event -eq 'Notification') { OurTitle | Set-Content $awaitFile }
+Log ("{3}: claude pid={0}, terminal={1}, tab=[{2}]" -f $ClaudePid, $OwnerName, (OurTitle), $what)
 if (-not (OurTabActive)) {
     Log 'tab not in front -> notify'
     HandleNotInFront

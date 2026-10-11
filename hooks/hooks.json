@@ -1,5 +1,5 @@
 {
-  "description": "Chime + tab marking when Claude finishes (Windows / Windows Terminal)",
+  "description": "Chime + tab marking when Claude finishes or needs input (Windows / Windows Terminal)",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -7,7 +7,17 @@
           {
             "type": "command",
             "command": "powershell.exe",
-            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "${CLAUDE_PLUGIN_ROOT}/scripts/notify-done.ps1", "-Mode", "prompt"],
+            "args": [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-WindowStyle",
+              "Hidden",
+              "-File",
+              "${CLAUDE_PLUGIN_ROOT}/scripts/notify-done.ps1",
+              "-Mode",
+              "prompt"
+            ],
             "async": true,
             "timeout": 15
           }
@@ -20,7 +30,37 @@
           {
             "type": "command",
             "command": "powershell.exe",
-            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "${CLAUDE_PLUGIN_ROOT}/scripts/notify-done.ps1"],
+            "args": [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-WindowStyle",
+              "Hidden",
+              "-File",
+              "${CLAUDE_PLUGIN_ROOT}/scripts/notify-done.ps1"
+            ],
+            "async": true,
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "^(permission_prompt|worker_permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe",
+            "args": [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-WindowStyle",
+              "Hidden",
+              "-File",
+              "${CLAUDE_PLUGIN_ROOT}/scripts/notify-done.ps1"
+            ],
             "async": true,
             "timeout": 30
           }

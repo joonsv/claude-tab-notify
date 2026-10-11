@@ -1,10 +1,12 @@
 # tab-notify
 
-Claude Code plugin for **Windows**: a soft chime when Claude finishes, and your terminal (tab) comes to you — but only if you haven't already seen it.
+Claude Code plugin for **Windows**: a soft chime when Claude finishes **or needs your input** (permission prompt, question), and your terminal (tab) comes to you — but only if you haven't already seen it.
 
 ## What it does
 
-| When Claude finishes and… | What happens |
+Finishing a turn and needing your input (a permission prompt, a question, an MCP input dialog) are handled exactly the same way:
+
+| When Claude finishes / needs input and… | What happens |
 |---|---|
 | You're in that session's tab and were active in the last 60 s | Nothing — you've seen it |
 | You're in that tab but idle (AFK) | Waits up to 3 min: any input in that tab (or a new prompt) cancels it, otherwise a chime |
