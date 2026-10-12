@@ -71,7 +71,7 @@ function PromptTicks {
 }
 
 # ---------------------------------------------------------------- helper DLL (stop + watch)
-$dll = Join-Path $stateDir 'claude-win-v9.dll'
+$dll = Join-Path $stateDir 'claude-win-v10.dll'
 if (-not (Test-Path $dll)) {
     $src = @'
 using System;
@@ -193,8 +193,10 @@ public static class ClaudeWin {
 
     public static bool ForegroundIsFullscreen() {
         int s;
-        // 2 = fullscreen app (QUNS_BUSY), 3 = D3D exclusive fullscreen, 4 = presentation mode
-        if (SHQueryUserNotificationState(out s) == 0 && (s == 2 || s == 3 || s == 4)) return true;
+        // 3 = D3D exclusive fullscreen, 4 = presentation mode. Not 2 (QUNS_BUSY): that is system-wide, so a
+        // fullscreen video on another monitor would block the pop-up while a normal window is in front.
+        // A borderless/F11/video fullscreen in front is caught by the geometry check below instead.
+        if (SHQueryUserNotificationState(out s) == 0 && (s == 3 || s == 4)) return true;
 
         IntPtr fg = GetForegroundWindow();
         if (fg == IntPtr.Zero) return false;
